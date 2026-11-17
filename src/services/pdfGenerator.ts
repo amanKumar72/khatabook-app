@@ -133,19 +133,21 @@ export class PdfGenerator {
     business: { name: string; phone?: string; address?: string; gstin?: string }
   ): Promise<void> {
     const html = this.buildInvoiceHtml(bill, items, business);
-    const { uri } = await Print.printToFileAsync({ html });
+    // Request base64 output so we can write directly to cacheDirectory, bypassing Android Print cache read restrictions
+    const { uri, base64 } = await Print.printToFileAsync({ html, base64: true });
     
-    // Copy to app's cache directory with clean filename for Android FilePermissionService compatibility
     const cleanNumber = (bill.bill_number || `invoice_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
     const targetUri = `${FileSystem.cacheDirectory}Invoice_${cleanNumber}.pdf`;
     
-    await FileSystem.copyAsync({
-      from: uri,
-      to: targetUri,
-    });
+    if (base64) {
+      await FileSystem.writeAsStringAsync(targetUri, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+    }
 
+    const shareUri = base64 ? targetUri : uri;
     if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(targetUri, {
+      await Sharing.shareAsync(shareUri, {
         UTI: '.pdf',
         mimeType: 'application/pdf',
         dialogTitle: `Invoice #${bill.bill_number}`,
@@ -269,19 +271,21 @@ export class PdfGenerator {
       </html>
     `;
 
-    const { uri } = await Print.printToFileAsync({ html });
+    // Request base64 output so we can write directly to cacheDirectory, bypassing Android Print cache read restrictions
+    const { uri, base64 } = await Print.printToFileAsync({ html, base64: true });
     
-    // Copy to app's cache directory with clean filename for Android FilePermissionService compatibility
     const cleanName = (customer.name || 'statement').replace(/[^a-zA-Z0-9_-]/g, '_');
     const targetUri = `${FileSystem.cacheDirectory}Ledger_${cleanName}_${Date.now()}.pdf`;
 
-    await FileSystem.copyAsync({
-      from: uri,
-      to: targetUri,
-    });
+    if (base64) {
+      await FileSystem.writeAsStringAsync(targetUri, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+    }
 
+    const shareUri = base64 ? targetUri : uri;
     if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(targetUri, {
+      await Sharing.shareAsync(shareUri, {
         UTI: '.pdf',
         mimeType: 'application/pdf',
         dialogTitle: `${customer.name} Ledger Statement`,
