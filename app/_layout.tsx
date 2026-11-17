@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, AppState } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { ShieldAlert, Lock, Unlock } from 'lucide-react-native';
+import { Lock, Unlock, ShieldCheck } from 'lucide-react-native';
 import { getDatabase } from '../src/db/database';
 import { useBookStore } from '../src/store/useBookStore';
 import { useAuthStore } from '../src/store/useAuthStore';
@@ -13,7 +13,7 @@ import { useThemeStore } from '../src/store/useThemeStore';
 export default function RootLayout() {
   const [dbReady, setDbReady] = useState(false);
   const loadBooks = useBookStore((s) => s.loadBooks);
-  const { isLocked, isLockEnabled, checkLockStatus, unlock } = useAuthStore();
+  const { isLocked, isLockEnabled, isAuthenticating, checkLockStatus, unlock } = useAuthStore();
   const loadLanguage = useLanguageStore((s) => s.loadLanguage);
   const { colors, isDark, loadTheme } = useThemeStore();
 
@@ -34,6 +34,45 @@ export default function RootLayout() {
     init();
   }, []);
 
+  // Auto-prompt unlock on app launch once DB and UI are ready
+  useEffect(() => {
+    if (dbReady && isLockEnabled && isLocked) {
+      const timer = setTimeout(() => {
+        unlock();
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [dbReady, isLockEnabled, isLocked]);
+
+  // Re-lock app when switching back from background
+  useEffect(() => {
+    let backgroundTimestamp = 0;
+
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        backgroundTimestamp = Date.now();
+      } else if (nextAppState === 'active') {
+        const authState = useAuthStore.getState();
+        // Only lock if app lock is enabled, we were genuinely backgrounded for >1s, and not actively in an auth prompt
+        if (
+          authState.isLockEnabled &&
+          !authState.isAuthenticating &&
+          backgroundTimestamp > 0 &&
+          Date.now() - backgroundTimestamp > 1200
+        ) {
+          authState.lockApp();
+          setTimeout(() => {
+            useAuthStore.getState().unlock();
+          }, 350);
+        }
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
   if (!dbReady) {
     return (
       <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
@@ -50,20 +89,27 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <View style={[styles.lockContainer, { backgroundColor: colors.background }]}>
           <StatusBar style={isDark ? 'light' : 'dark'} />
-          <View style={[styles.lockIconBox, { backgroundColor: colors.primaryBg }]}>
-            <Lock size={48} color={colors.primary} />
+          <View style={[styles.lockIconBox, { backgroundColor: colors.primaryBg, borderColor: colors.border, borderWidth: 1 }]}>
+            <ShieldCheck size={48} color={colors.primary} />
           </View>
           <Text style={[styles.lockTitle, { color: colors.text }]}>Khatabook is Locked</Text>
           <Text style={[styles.lockSubtitle, { color: colors.textSecondary }]}>
-            Your business accounts are protected
+            Verify your fingerprint, Face ID, or screen PIN to access your business ledgers.
           </Text>
           <TouchableOpacity
             style={[styles.unlockButton, { backgroundColor: colors.primary }]}
             onPress={() => unlock()}
+            disabled={isAuthenticating}
             activeOpacity={0.8}
           >
-            <Unlock size={20} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.unlockButtonText}>Unlock with Biometrics / PIN</Text>
+            {isAuthenticating ? (
+              <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 8 }} />
+            ) : (
+              <Unlock size={20} color="#fff" style={{ marginRight: 8 }} />
+            )}
+            <Text style={styles.unlockButtonText}>
+              {isAuthenticating ? 'Verifying...' : 'Unlock with Biometrics / PIN'}
+            </Text>
           </TouchableOpacity>
         </View>
       </SafeAreaProvider>
@@ -166,6 +212,8 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginBottom: 32,
     textAlign: 'center',
+    lineHeight: 22,
+    maxWidth: 320,
   },
   unlockButton: {
     flexDirection: 'row',

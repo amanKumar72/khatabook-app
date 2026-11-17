@@ -6,15 +6,18 @@ interface AuthState {
   isLocked: boolean;
   isLockEnabled: boolean;
   isLoading: boolean;
+  isAuthenticating: boolean;
   checkLockStatus: () => Promise<void>;
   unlock: () => Promise<boolean>;
   setLockEnabled: (enabled: boolean) => Promise<void>;
+  lockApp: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   isLocked: false,
   isLockEnabled: false,
   isLoading: true,
+  isAuthenticating: false,
 
   checkLockStatus: async () => {
     try {
@@ -26,14 +29,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       const enabled = setting ? setting.value === 'true' : false;
       set({ isLockEnabled: enabled, isLocked: enabled, isLoading: false });
-
-      if (enabled) {
-        // Attempt immediate biometric unlock
-        const success = await AppLockService.authenticate();
-        if (success) {
-          set({ isLocked: false });
-        }
-      }
     } catch (e) {
       console.error('Failed to check lock status:', e);
       set({ isLoading: false });
@@ -41,12 +36,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   unlock: async () => {
-    const success = await AppLockService.authenticate();
-    if (success) {
-      set({ isLocked: false });
-      return true;
+    const { isAuthenticating } = get();
+    if (isAuthenticating) return false;
+
+    set({ isAuthenticating: true });
+    try {
+      const result = await AppLockService.authenticate('Unlock Khatabook');
+      if (result.success) {
+        set({ isLocked: false, isAuthenticating: false });
+        return true;
+      }
+      set({ isAuthenticating: false });
+      return false;
+    } catch (e) {
+      console.error('Unlock error:', e);
+      set({ isAuthenticating: false });
+      return false;
     }
-    return false;
+  },
+
+  lockApp: () => {
+    const { isLockEnabled } = get();
+    if (isLockEnabled) {
+      set({ isLocked: true });
+    }
   },
 
   setLockEnabled: async (enabled: boolean) => {
@@ -55,7 +68,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       'app_lock_enabled',
       enabled ? 'true' : 'false',
     ]);
-    set({ isLockEnabled: enabled });
+    set({ isLockEnabled: enabled, isLocked: false });
   },
 }));
-

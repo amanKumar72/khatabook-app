@@ -28,6 +28,7 @@ import {
 } from 'lucide-react-native';
 import { useBookStore } from '../../src/store/useBookStore';
 import { useAuthStore } from '../../src/store/useAuthStore';
+import { AppLockService } from '../../src/services/appLock';
 import { useLanguageStore } from '../../src/store/useLanguageStore';
 import { useThemeStore } from '../../src/store/useThemeStore';
 import { ThemeMode } from '../../src/constants/theme';
@@ -71,7 +72,46 @@ export default function MoreScreen() {
   };
 
   const handleToggleLock = async (value: boolean) => {
-    await setLockEnabled(value);
+    if (value) {
+      // User is enabling App Lock
+      const status = await AppLockService.getStatus();
+      if (!status.canAuthenticate) {
+        Alert.alert(
+          'Lock Not Available',
+          status.errorMessage ||
+            'Please enable a Fingerprint, Face ID, or Screen Lock PIN in your device Settings first.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Prompt user to verify identity before enabling
+      const authResult = await AppLockService.authenticate('Confirm Identity to Enable App Lock');
+      if (!authResult.success) {
+        if (authResult.error && authResult.error !== 'user_cancel') {
+          Alert.alert('Verification Failed', 'Could not verify identity. App lock was not enabled.');
+        }
+        return;
+      }
+
+      await setLockEnabled(true);
+      Alert.alert(
+        'App Lock Activated',
+        'Khatabook is now protected. You will be prompted to authenticate whenever you open the app.'
+      );
+    } else {
+      // User is disabling App Lock: require authentication first for security
+      const authResult = await AppLockService.authenticate('Verify Identity to Disable App Lock');
+      if (!authResult.success) {
+        if (authResult.error && authResult.error !== 'user_cancel') {
+          Alert.alert('Verification Failed', 'Identity verification failed. App lock remains active.');
+        }
+        return;
+      }
+
+      await setLockEnabled(false);
+      Alert.alert('App Lock Disabled', 'Biometric protection has been turned off.');
+    }
   };
 
   return (
