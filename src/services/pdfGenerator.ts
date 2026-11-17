@@ -1,5 +1,6 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Bill, BillItem, Customer, Transaction } from '../types/models';
 
 export class PdfGenerator {
@@ -133,8 +134,18 @@ export class PdfGenerator {
   ): Promise<void> {
     const html = this.buildInvoiceHtml(bill, items, business);
     const { uri } = await Print.printToFileAsync({ html });
+    
+    // Copy to app's cache directory with clean filename for Android FilePermissionService compatibility
+    const cleanNumber = (bill.bill_number || `invoice_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const targetUri = `${FileSystem.cacheDirectory}Invoice_${cleanNumber}.pdf`;
+    
+    await FileSystem.copyAsync({
+      from: uri,
+      to: targetUri,
+    });
+
     if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(uri, {
+      await Sharing.shareAsync(targetUri, {
         UTI: '.pdf',
         mimeType: 'application/pdf',
         dialogTitle: `Invoice #${bill.bill_number}`,
@@ -259,8 +270,18 @@ export class PdfGenerator {
     `;
 
     const { uri } = await Print.printToFileAsync({ html });
+    
+    // Copy to app's cache directory with clean filename for Android FilePermissionService compatibility
+    const cleanName = (customer.name || 'statement').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const targetUri = `${FileSystem.cacheDirectory}Ledger_${cleanName}_${Date.now()}.pdf`;
+
+    await FileSystem.copyAsync({
+      from: uri,
+      to: targetUri,
+    });
+
     if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(uri, {
+      await Sharing.shareAsync(targetUri, {
         UTI: '.pdf',
         mimeType: 'application/pdf',
         dialogTitle: `${customer.name} Ledger Statement`,

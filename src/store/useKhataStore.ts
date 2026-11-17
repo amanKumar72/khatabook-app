@@ -38,6 +38,14 @@ interface KhataState {
     attachmentUri?: string,
     dueDate?: string
   ) => Promise<void>;
+  updateTransaction: (
+    transactionId: string,
+    amount: number,
+    type: TransactionType,
+    date: string,
+    description?: string,
+    dueDate?: string
+  ) => Promise<void>;
   deleteTransaction: (transactionId: string) => Promise<void>;
   deleteCustomer: (customerId: string) => Promise<void>;
 }
@@ -170,6 +178,63 @@ export const useKhataStore = create<KhataState>((set, get) => ({
 
     await get().loadCustomerDetails(customerId);
     await get().loadCustomers(bookId);
+  },
+
+  updateTransaction: async (
+    transactionId: string,
+    amount: number,
+    type: TransactionType,
+    date: string,
+    description: string = '',
+    dueDate: string = ''
+  ) => {
+    const db = await getDatabase();
+    const oldTx = await db.getFirstAsync<Transaction>(
+      'SELECT * FROM transactions WHERE id = ?',
+      [transactionId]
+    );
+    if (!oldTx) return;
+
+    const customer = await db.getFirstAsync<Customer>(
+      'SELECT * FROM customers WHERE id = ?',
+      [oldTx.customer_id]
+    );
+    if (!customer) return;
+
+    // Calculate balance effect delta
+    let oldDelta = 0;
+    if (customer.party_type === 1) {
+      // Customer: You gave (+), You got (-)
+      oldDelta = oldTx.type === 1 ? oldTx.amount : -oldTx.amount;
+    } else {
+      // Supplier: You got (+), You gave (-)
+      oldDelta = oldTx.type === 2 ? oldTx.amount : -oldTx.amount;
+    }
+
+    let newDelta = 0;
+    if (customer.party_type === 1) {
+      newDelta = type === 1 ? amount : -amount;
+    } else {
+      newDelta = type === 2 ? amount : -amount;
+    }
+
+    const netChange = newDelta - oldDelta;
+    const newBalance = customer.balance + netChange;
+    const now = Date.now();
+
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        'UPDATE transactions SET amount = ?, type = ?, date = ?, description = ?, due_date = ?, updated_at = ? WHERE id = ?',
+        [amount, type, date, description, dueDate, now, transactionId]
+      );
+      await db.runAsync(
+        'UPDATE customers SET balance = ?, updated_at = ? WHERE id = ?',
+        [newBalance, now, oldTx.customer_id]
+      );
+    });
+
+    await get().loadCustomerDetails(oldTx.customer_id);
+    await get().loadCustomers(oldTx.book_id);
   },
 
   deleteTransaction: async (transactionId: string) => {

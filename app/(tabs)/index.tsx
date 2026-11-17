@@ -240,11 +240,11 @@ export default function KhataHomeScreen() {
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <FileText size={48} color="#cbd5e1" />
-            <Text style={styles.emptyTitle}>
+            <FileText size={48} color={colors.textMuted} />
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>
               No {selectedPartyType === 1 ? 'Customers' : 'Suppliers'} found
             </Text>
-            <Text style={styles.emptySubtitle}>
+            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
               Add your first {selectedPartyType === 1 ? 'customer' : 'supplier'} to record Gave / Got entries offline.
             </Text>
           </View>

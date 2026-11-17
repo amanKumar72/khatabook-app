@@ -9,8 +9,10 @@ import {
   Alert,
   Modal,
   TextInput,
+  ScrollView,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Phone,
   MessageCircle,
@@ -22,18 +24,20 @@ import {
   Edit3,
   X,
   Check,
+  Clock,
 } from 'lucide-react-native';
 import { useKhataStore } from '../../src/store/useKhataStore';
 import { useBookStore } from '../../src/store/useBookStore';
 import { useLanguageStore } from '../../src/store/useLanguageStore';
 import { useThemeStore } from '../../src/store/useThemeStore';
-import { Transaction } from '../../src/types/models';
+import { Transaction, TransactionType } from '../../src/types/models';
 import { PdfGenerator } from '../../src/services/pdfGenerator';
 import { getWhatsAppReminderMessage, generateUpiUrl } from '../../src/services/upi';
 
 export default function CustomerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const businessProfile = useBookStore((s) => s.businessProfile);
   const activeBook = useBookStore((s) => s.activeBook);
@@ -42,17 +46,28 @@ export default function CustomerDetailScreen() {
     activeTransactions,
     loadCustomerDetails,
     updateCustomer,
+    updateTransaction,
     deleteTransaction,
     deleteCustomer,
   } = useKhataStore();
   const { t, language } = useLanguageStore();
   const { colors, isDark } = useThemeStore();
 
-  const [showEditModal, setShowEditModal] = useState(false);
+  // Contact Edit Modal State
+  const [showEditContactModal, setShowEditContactModal] = useState(false);
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editAddress, setEditAddress] = useState('');
   const [editCreditLimit, setEditCreditLimit] = useState('');
+
+  // Transaction Edit Modal State
+  const [showEditTxModal, setShowEditTxModal] = useState(false);
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [txAmount, setTxAmount] = useState('');
+  const [txType, setTxType] = useState<TransactionType>(1);
+  const [txDate, setTxDate] = useState('');
+  const [txDescription, setTxDescription] = useState('');
+  const [txDueDate, setTxDueDate] = useState('');
 
   useEffect(() => {
     if (id) {
@@ -71,15 +86,26 @@ export default function CustomerDetailScreen() {
 
   if (!activeCustomer) {
     return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.notFoundText}>Party not found.</Text>
+      <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
+        <Text style={[styles.notFoundText, { color: colors.textSecondary }]}>Party not found.</Text>
       </View>
     );
   }
 
   const isCustomer = activeCustomer.party_type === 1;
-  const isReceivable = isCustomer ? activeCustomer.balance >= 0 : activeCustomer.balance <= 0;
+  // For customer: balance >= 0 means they owe you (Receivable - Green). Negative means you owe them (Payable - Red)
+  // For supplier: balance > 0 means you owe supplier (Payable - Red). Negative means advance paid (Receivable - Green)
+  const isReceivable = isCustomer ? activeCustomer.balance >= 0 : activeCustomer.balance < 0;
   const balanceAbs = Math.abs(activeCustomer.balance);
+
+  const getBalanceStatusText = () => {
+    if (activeCustomer.balance === 0) return t('all_settled');
+    if (isCustomer) {
+      return activeCustomer.balance > 0 ? "You'll Get (Receivable)" : "You'll Give (Payable)";
+    } else {
+      return activeCustomer.balance > 0 ? "You'll Give (Payable)" : "You'll Get (Advance Paid)";
+    }
+  };
 
   const handleCall = () => {
     if (activeCustomer.phone) {
@@ -119,14 +145,15 @@ export default function CustomerDetailScreen() {
         name: businessProfile.name || activeBook?.name || 'Khatabook Store',
         phone: businessProfile.phone,
       });
-    } catch (e) {
-      console.error('Failed to generate PDF:', e);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to generate PDF');
     }
   };
 
   const handleDeleteContact = () => {
+    const partyName = isCustomer ? 'Customer' : 'Supplier';
     Alert.alert(
-      'Archive Party?',
+      `Archive ${partyName}?`,
       `Are you sure you want to archive ${activeCustomer.name}? They will be hidden from the active list.`,
       [
         { text: 'Cancel', style: 'cancel' },
@@ -154,16 +181,87 @@ export default function CustomerDetailScreen() {
       editAddress.trim(),
       parseFloat(editCreditLimit) || 0
     );
-    setShowEditModal(false);
+    setShowEditContactModal(false);
+  };
+
+  const handleOpenEditTx = (tx: Transaction) => {
+    setEditingTx(tx);
+    setTxAmount(tx.amount.toString());
+    setTxType(tx.type);
+    setTxDate(tx.date);
+    setTxDescription(tx.description || '');
+    setTxDueDate(tx.due_date || '');
+    setShowEditTxModal(true);
+  };
+
+  const handleSaveTxEdit = async () => {
+    if (!editingTx) return;
+    const numAmount = parseFloat(txAmount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid amount.');
+      return;
+    }
+    if (!txDate.trim()) {
+      Alert.alert('Invalid Date', 'Please enter a valid date (YYYY-MM-DD).');
+      return;
+    }
+
+    await updateTransaction(
+      editingTx.id,
+      numAmount,
+      txType,
+      txDate.trim(),
+      txDescription.trim(),
+      txDueDate.trim()
+    );
+
+    setShowEditTxModal(false);
+    setEditingTx(null);
+  };
+
+  const handleDeleteTx = (txId: string) => {
+    Alert.alert(
+      'Delete Entry',
+      'Are you sure you want to delete this ledger entry? Your net balance will update automatically.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteTransaction(txId);
+          },
+        },
+      ]
+    );
   };
 
   const renderTransaction = ({ item }: { item: Transaction }) => {
     const isGave = item.type === 1;
     return (
-      <View style={[styles.txCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={styles.txInfoCol}>
-          <Text style={[styles.txDate, { color: colors.text }]}>{item.date}</Text>
-          {item.description ? <Text style={[styles.txDesc, { color: colors.textSecondary }]}>{item.description}</Text> : null}
+      <View
+        style={[
+          styles.txCard,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            borderWidth: 1,
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.txInfoCol}
+          onPress={() => handleOpenEditTx(item)}
+          activeOpacity={0.7}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={[styles.txDate, { color: colors.text }]}>{item.date}</Text>
+          </View>
+          {item.description ? (
+            <Text style={[styles.txDesc, { color: colors.textSecondary }]} numberOfLines={2}>
+              {item.description}
+            </Text>
+          ) : null}
           {item.attachment_uri ? (
             <View style={styles.attachmentBadge}>
               <Paperclip size={12} color="#2563eb" />
@@ -176,7 +274,7 @@ export default function CustomerDetailScreen() {
               <Text style={styles.dueDateText}>Due: {item.due_date}</Text>
             </View>
           ) : null}
-        </View>
+        </TouchableOpacity>
 
         <View style={styles.txAmountsRow}>
           <View style={styles.txAmountCol}>
@@ -193,12 +291,25 @@ export default function CustomerDetailScreen() {
             </Text>
           </View>
 
-          <TouchableOpacity
-            style={styles.txDeleteBtn}
-            onPress={() => deleteTransaction(item.id)}
-          >
-            <Trash2 size={15} color={colors.textMuted} />
-          </TouchableOpacity>
+          <View style={styles.actionButtonsCol}>
+            <TouchableOpacity
+              style={[styles.txActionBtn, { backgroundColor: colors.cardSecondary }]}
+              onPress={() => handleOpenEditTx(item)}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Edit3 size={15} color={colors.accentBlue} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.txActionBtn, { backgroundColor: colors.cardSecondary }]}
+              onPress={() => handleDeleteTx(item.id)}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Trash2 size={15} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     );
@@ -208,23 +319,57 @@ export default function CustomerDetailScreen() {
     <>
       <Stack.Screen
         options={{
-          title: 'Customer Ledger',
+          title: isCustomer ? 'Customer Ledger' : 'Supplier Ledger',
           headerBackTitle: 'Back',
           headerBackButtonDisplayMode: 'minimal',
+          headerStyle: { backgroundColor: colors.card },
+          headerTintColor: colors.text,
+          headerTitleStyle: { color: colors.text, fontWeight: '700' },
         }}
       />
 
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Customer Header Box */}
-        <View style={[styles.headerBox, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        {/* Customer / Supplier Header Box */}
+        <View
+          style={[
+            styles.headerBox,
+            {
+              backgroundColor: colors.card,
+              borderBottomColor: colors.border,
+              borderBottomWidth: 1,
+            },
+          ]}
+        >
           <View style={styles.headerTopRow}>
             <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={[styles.customerName, { color: colors.text }]}>{activeCustomer.name}</Text>
-              <Text style={[styles.customerPhone, { color: colors.textSecondary }]}>{activeCustomer.phone || 'No phone number'}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={[styles.customerName, { color: colors.text }]}>{activeCustomer.name}</Text>
+                <View
+                  style={[
+                    styles.partyTypeTag,
+                    {
+                      backgroundColor: isCustomer ? colors.primaryBg : colors.dangerBg,
+                      borderColor: isCustomer ? colors.primary : colors.danger,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.partyTypeTagText,
+                      { color: isCustomer ? colors.primary : colors.danger },
+                    ]}
+                  >
+                    {isCustomer ? 'Customer' : 'Supplier'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={[styles.customerPhone, { color: colors.textSecondary }]}>
+                {activeCustomer.phone || 'No phone number'}
+              </Text>
             </View>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TouchableOpacity
-                onPress={() => setShowEditModal(true)}
+                onPress={() => setShowEditContactModal(true)}
                 style={[styles.actionIconBtn, { backgroundColor: colors.cardSecondary }]}
                 activeOpacity={0.7}
               >
@@ -252,27 +397,35 @@ export default function CustomerDetailScreen() {
               ₹{balanceAbs.toFixed(2)}
             </Text>
             <Text style={[styles.balanceStatus, { color: colors.textSecondary }]}>
-              {activeCustomer.balance === 0
-                ? t('all_settled')
-                : isReceivable
-                ? `${t('to_collect')} (Receivable)`
-                : `${t('to_pay')} (Payable)`}
+              {getBalanceStatusText()}
             </Text>
           </View>
 
           {/* Communication CTA Row */}
           <View style={styles.ctaRow}>
-            <TouchableOpacity style={[styles.ctaBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={handleCall} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={[styles.ctaBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={handleCall}
+              activeOpacity={0.7}
+            >
               <Phone size={18} color="#2563eb" style={{ marginRight: 6 }} />
               <Text style={[styles.ctaBtnText, { color: '#2563eb' }]}>{t('call')}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.ctaBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={handleWhatsApp} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={[styles.ctaBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={handleWhatsApp}
+              activeOpacity={0.7}
+            >
               <MessageCircle size={18} color="#16a34a" style={{ marginRight: 6 }} />
               <Text style={[styles.ctaBtnText, { color: '#16a34a' }]}>{t('whatsapp')}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.ctaBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={handleDownloadPdf} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={[styles.ctaBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={handleDownloadPdf}
+              activeOpacity={0.7}
+            >
               <FileText size={18} color="#7c3aed" style={{ marginRight: 6 }} />
               <Text style={[styles.ctaBtnText, { color: '#7c3aed' }]}>{t('report')}</Text>
             </TouchableOpacity>
@@ -284,18 +437,32 @@ export default function CustomerDetailScreen() {
           data={activeTransactions}
           keyExtractor={(item) => item.id}
           renderItem={renderTransaction}
-          contentContainerStyle={styles.txList}
+          contentContainerStyle={[
+            styles.txList,
+            { paddingBottom: 88 + Math.max(insets.bottom, 12) },
+          ]}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <AlertCircle size={40} color="#cbd5e1" />
-              <Text style={styles.emptyTitle}>{t('no_entries')}</Text>
-              <Text style={styles.emptySubtitle}>{t('no_entries_sub')}</Text>
+              <AlertCircle size={40} color={colors.textMuted} />
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>{t('no_entries')}</Text>
+              <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+                {t('no_entries_sub')}
+              </Text>
             </View>
           }
         />
 
-        {/* Fixed Bottom Action Buttons */}
-        <View style={styles.bottomBar}>
+        {/* Fixed Bottom Action Buttons with Theme & Safe Area */}
+        <View
+          style={[
+            styles.bottomBar,
+            {
+              backgroundColor: colors.card,
+              borderTopColor: colors.border,
+              paddingBottom: Math.max(insets.bottom, 12),
+            },
+          ]}
+        >
           <TouchableOpacity
             style={[styles.bigActionBtn, { backgroundColor: '#dc2626' }]}
             onPress={() =>
@@ -318,59 +485,259 @@ export default function CustomerDetailScreen() {
         </View>
       </View>
 
-      {/* Edit Contact Modal */}
-      <Modal visible={showEditModal} transparent animationType="slide">
+      {/* Edit Transaction Modal */}
+      <Modal visible={showEditTxModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('edit_contact')}</Text>
-              <TouchableOpacity onPress={() => setShowEditModal(false)}>
-                <X size={20} color="#64748b" />
+          <View
+            style={[
+              styles.modalBox,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                borderTopWidth: 1,
+                paddingBottom: Math.max(insets.bottom, 18),
+              },
+            ]}
+          >
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Edit3 size={18} color={colors.primary} style={{ marginRight: 8 }} />
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Edit Ledger Entry</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowEditTxModal(false)}>
+                <X size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.modalLabel}>Name *</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={editName}
-              onChangeText={setEditName}
-              placeholder="e.g. Ramesh Kumar"
-              placeholderTextColor="#94a3b8"
-            />
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Type Switcher */}
+              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>Transaction Type</Text>
+              <View style={[styles.modalTypeRow, { backgroundColor: colors.cardSecondary }]}>
+                <TouchableOpacity
+                  style={[
+                    styles.modalTypeBtn,
+                    txType === 1 && { backgroundColor: '#dc2626' },
+                  ]}
+                  onPress={() => setTxType(1)}
+                >
+                  <Text
+                    style={[
+                      styles.modalTypeBtnText,
+                      { color: txType === 1 ? '#ffffff' : colors.textSecondary },
+                    ]}
+                  >
+                    YOU GAVE ₹
+                  </Text>
+                </TouchableOpacity>
 
-            <Text style={styles.modalLabel}>Phone Number</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={editPhone}
-              onChangeText={setEditPhone}
-              placeholder="e.g. 9876543210"
-              placeholderTextColor="#94a3b8"
-              keyboardType="phone-pad"
-            />
+                <TouchableOpacity
+                  style={[
+                    styles.modalTypeBtn,
+                    txType === 2 && { backgroundColor: '#16a34a' },
+                  ]}
+                  onPress={() => setTxType(2)}
+                >
+                  <Text
+                    style={[
+                      styles.modalTypeBtnText,
+                      { color: txType === 2 ? '#ffffff' : colors.textSecondary },
+                    ]}
+                  >
+                    YOU GOT ₹
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
-            <Text style={styles.modalLabel}>Address (Optional)</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={editAddress}
-              onChangeText={setEditAddress}
-              placeholder="e.g. Shop 12, Main Market"
-              placeholderTextColor="#94a3b8"
-            />
+              {/* Amount */}
+              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>Amount (₹) *</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.inputBorder,
+                    color: colors.text,
+                    fontSize: 20,
+                    fontWeight: '700',
+                  },
+                ]}
+                value={txAmount}
+                onChangeText={setTxAmount}
+                keyboardType="numeric"
+                placeholder="0.00"
+                placeholderTextColor={colors.textMuted}
+              />
 
-            <Text style={styles.modalLabel}>Credit Limit (₹)</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={editCreditLimit}
-              onChangeText={setEditCreditLimit}
-              placeholder="0.00"
-              placeholderTextColor="#94a3b8"
-              keyboardType="numeric"
-            />
+              {/* Date */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>Date (YYYY-MM-DD) *</Text>
+                <TouchableOpacity
+                  onPress={() => setTxDate(new Date().toISOString().split('T')[0])}
+                >
+                  <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '700', marginBottom: 4 }}>
+                    Today
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.inputBorder,
+                    color: colors.text,
+                  },
+                ]}
+                value={txDate}
+                onChangeText={setTxDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.textMuted}
+              />
 
-            <TouchableOpacity style={styles.modalSaveBtn} onPress={handleSaveContactEdit}>
-              <Check size={18} color="#ffffff" style={{ marginRight: 6 }} />
-              <Text style={styles.modalSaveText}>{t('save')}</Text>
-            </TouchableOpacity>
+              {/* Description */}
+              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>Note / Details (Optional)</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.inputBorder,
+                    color: colors.text,
+                  },
+                ]}
+                value={txDescription}
+                onChangeText={setTxDescription}
+                placeholder="e.g. 5 bags of flour / partial cash payment"
+                placeholderTextColor={colors.textMuted}
+              />
+
+              {/* Due Date */}
+              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>Due Date (Optional, YYYY-MM-DD)</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.inputBorder,
+                    color: colors.text,
+                  },
+                ]}
+                value={txDueDate}
+                onChangeText={setTxDueDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.textMuted}
+              />
+
+              <TouchableOpacity
+                style={[styles.modalSaveBtn, { backgroundColor: colors.primary }]}
+                onPress={handleSaveTxEdit}
+                activeOpacity={0.8}
+              >
+                <Check size={18} color="#ffffff" style={{ marginRight: 6 }} />
+                <Text style={styles.modalSaveText}>Save Changes</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit Contact Modal */}
+      <Modal visible={showEditContactModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.modalBox,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                borderTopWidth: 1,
+                paddingBottom: Math.max(insets.bottom, 18),
+              },
+            ]}
+          >
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>{t('edit_contact')}</Text>
+              <TouchableOpacity onPress={() => setShowEditContactModal(false)}>
+                <X size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>Name *</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.inputBorder,
+                    color: colors.text,
+                  },
+                ]}
+                value={editName}
+                onChangeText={setEditName}
+                placeholder="e.g. Ramesh Kumar"
+                placeholderTextColor={colors.textMuted}
+              />
+
+              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>Phone Number</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.inputBorder,
+                    color: colors.text,
+                  },
+                ]}
+                value={editPhone}
+                onChangeText={setEditPhone}
+                placeholder="10-digit mobile number"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="phone-pad"
+              />
+
+              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>Address / Location</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.inputBorder,
+                    color: colors.text,
+                  },
+                ]}
+                value={editAddress}
+                onChangeText={setEditAddress}
+                placeholder="Shop number, city, or locality"
+                placeholderTextColor={colors.textMuted}
+              />
+
+              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>Credit Limit (₹)</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.inputBorder,
+                    color: colors.text,
+                  },
+                ]}
+                value={editCreditLimit}
+                onChangeText={setEditCreditLimit}
+                placeholder="0"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+              />
+
+              <TouchableOpacity
+                style={[styles.modalSaveBtn, { backgroundColor: colors.primary }]}
+                onPress={handleSaveContactEdit}
+                activeOpacity={0.8}
+              >
+                <Check size={18} color="#ffffff" style={{ marginRight: 6 }} />
+                <Text style={styles.modalSaveText}>{t('save')}</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -379,10 +746,6 @@ export default function CustomerDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -390,13 +753,13 @@ const styles = StyleSheet.create({
   },
   notFoundText: {
     fontSize: 16,
-    color: '#64748b',
+    fontWeight: '600',
+  },
+  container: {
+    flex: 1,
   },
   headerBox: {
-    backgroundColor: '#ffffff',
     padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
   },
   headerTopRow: {
     flexDirection: 'row',
@@ -406,29 +769,35 @@ const styles = StyleSheet.create({
   customerName: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#0f172a',
+  },
+  partyTypeTag: {
+    marginLeft: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  partyTypeTagText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   customerPhone: {
     fontSize: 13,
-    color: '#64748b',
     marginTop: 2,
   },
   actionIconBtn: {
     padding: 8,
     borderRadius: 8,
-    backgroundColor: '#f1f5f9',
   },
   balanceBox: {
     alignItems: 'center',
     marginVertical: 14,
-    backgroundColor: '#f8fafc',
     padding: 12,
     borderRadius: 12,
   },
   balanceTitle: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#64748b',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -440,7 +809,6 @@ const styles = StyleSheet.create({
   balanceStatus: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#475569',
   },
   ctaRow: {
     flexDirection: 'row',
@@ -451,9 +819,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f8fafc',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
     paddingVertical: 10,
     borderRadius: 8,
   },
@@ -463,33 +829,25 @@ const styles = StyleSheet.create({
   },
   txList: {
     padding: 12,
-    paddingBottom: 90,
   },
   txCard: {
-    backgroundColor: '#ffffff',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 14,
     borderRadius: 10,
     marginBottom: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.03,
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 2,
-    elevation: 1,
   },
   txInfoCol: {
     flex: 1,
+    paddingRight: 8,
   },
   txDate: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#1e293b',
   },
   txDesc: {
     fontSize: 12,
-    color: '#64748b',
     marginTop: 2,
   },
   attachmentBadge: {
@@ -515,24 +873,31 @@ const styles = StyleSheet.create({
   txAmountsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
   txAmountCol: {
     alignItems: 'flex-end',
-    minWidth: 65,
+    minWidth: 62,
   },
   txColLabel: {
     fontSize: 10,
-    color: '#94a3b8',
     marginBottom: 2,
   },
   txAmountText: {
     fontSize: 14,
     fontWeight: '800',
   },
-  txDeleteBtn: {
-    padding: 4,
+  actionButtonsCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     marginLeft: 4,
+  },
+  txActionBtn: {
+    padding: 6,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyContainer: {
     alignItems: 'center',
@@ -542,12 +907,10 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#334155',
     marginTop: 10,
   },
   emptySubtitle: {
     fontSize: 12,
-    color: '#94a3b8',
     textAlign: 'center',
     marginTop: 4,
     paddingHorizontal: 30,
@@ -557,12 +920,11 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#ffffff',
     flexDirection: 'row',
-    padding: 14,
+    paddingTop: 12,
+    paddingHorizontal: 14,
     gap: 12,
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
   },
   bigActionBtn: {
     flex: 1,
@@ -580,15 +942,14 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'flex-end',
   },
   modalBox: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
     padding: 18,
-    maxHeight: '80%',
+    maxHeight: '85%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -596,39 +957,52 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   modalTitle: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#1e293b',
   },
   modalLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#475569',
-    marginBottom: 4,
+    marginBottom: 6,
+    marginTop: 4,
   },
   modalInput: {
-    backgroundColor: '#f8fafc',
     borderWidth: 1,
-    borderColor: '#cbd5e1',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    color: '#1e293b',
     marginBottom: 12,
   },
+  modalTypeRow: {
+    flexDirection: 'row',
+    borderRadius: 8,
+    padding: 4,
+    marginBottom: 14,
+    gap: 6,
+  },
+  modalTypeBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 6,
+  },
+  modalTypeBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
   modalSaveBtn: {
-    backgroundColor: '#16a34a',
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 13,
-    borderRadius: 8,
-    marginTop: 6,
+    paddingVertical: 14,
+    borderRadius: 10,
+    marginTop: 8,
+    marginBottom: 12,
   },
   modalSaveText: {
     color: '#ffffff',
