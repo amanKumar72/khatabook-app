@@ -1,14 +1,251 @@
-import { StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  TextInput,
+  RefreshControl,
+  Modal,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  Search,
+  UserPlus,
+  ArrowDownLeft,
+  ArrowUpRight,
+  ChevronDown,
+  Phone,
+  FileText,
+  Filter,
+  BookOpen,
+  Check,
+  Plus,
+  Store,
+  X,
+} from 'lucide-react-native';
+import { useBookStore } from '../../src/store/useBookStore';
+import { useKhataStore } from '../../src/store/useKhataStore';
+import { useLanguageStore } from '../../src/store/useLanguageStore';
+import { useThemeStore } from '../../src/store/useThemeStore';
+import { Customer, PartyType } from '../../src/types/models';
 
-import EditScreenInfo from '@/components/EditScreenInfo';
-import { Text, View } from '@/components/Themed';
+export default function KhataHomeScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { books, activeBook, businessProfile, setActiveBook, createBook } = useBookStore();
+  const { customers, totalReceivable, totalPayable, loadCustomers, isLoading } = useKhataStore();
+  const { t } = useLanguageStore();
+  const { colors, isDark } = useThemeStore();
 
-export default function TabOneScreen() {
+  const [selectedPartyType, setSelectedPartyType] = useState<PartyType>(1); // 1 = Customer, 2 = Supplier
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterPending, setFilterPending] = useState(false);
+  const [bookModalVisible, setBookModalVisible] = useState(false);
+  const [newBookName, setNewBookName] = useState('');
+  const [isCreatingBook, setIsCreatingBook] = useState(false);
+
+  useEffect(() => {
+    if (activeBook) {
+      loadCustomers(activeBook.id);
+    }
+  }, [activeBook]);
+
+  const filteredCustomers = customers.filter((c) => {
+    if (c.party_type !== selectedPartyType) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchName = c.name.toLowerCase().includes(q);
+      const matchPhone = (c.phone || '').includes(q);
+      if (!matchName && !matchPhone) return false;
+    }
+    if (filterPending) {
+      return Math.abs(c.balance) > 0;
+    }
+    return true;
+  });
+
+  const renderPartyItem = ({ item }: { item: Customer }) => {
+    const isReceivable = item.party_type === 1 ? item.balance >= 0 : item.balance <= 0;
+    const balanceAbs = Math.abs(item.balance);
+
+    return (
+      <TouchableOpacity
+        style={[styles.partyCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+        onPress={() => router.push(`/customer/${item.id}`)}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.partyAvatar, { backgroundColor: colors.primaryBg }]}>
+          <Text style={[styles.partyAvatarText, { color: colors.primary }]}>{item.name.charAt(0).toUpperCase()}</Text>
+        </View>
+
+        <View style={styles.partyInfo}>
+          <Text style={[styles.partyName, { color: colors.text }]} numberOfLines={1}>
+            {item.name}
+          </Text>
+          <View style={styles.partyPhoneRow}>
+            {item.phone ? (
+              <>
+                <Phone size={12} color={colors.textSecondary} style={{ marginRight: 4 }} />
+                <Text style={[styles.partyPhone, { color: colors.textSecondary }]}>{item.phone}</Text>
+              </>
+            ) : (
+              <Text style={[styles.partyPhone, { color: colors.textMuted }]}>No phone</Text>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.partyBalanceContainer}>
+          <Text
+            style={[
+              styles.partyBalanceAmount,
+              { color: isReceivable ? colors.primary : colors.danger },
+            ]}
+          >
+            ₹{balanceAbs.toFixed(2)}
+          </Text>
+          <Text style={[styles.partyBalanceLabel, { color: colors.textSecondary }]}>
+            {item.balance === 0
+              ? 'Settled'
+              : item.party_type === 1
+              ? item.balance > 0
+                ? "You'll Get"
+                : "You'll Give"
+              : item.balance > 0
+              ? "You'll Give"
+              : "You'll Get"}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Tab One</Text>
-      <View style={styles.separator} lightColor="#eee" darkColor="rgba(255,255,255,0.1)" />
-      <EditScreenInfo path="app/(tabs)/index.tsx" />
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+      {/* Top Header */}
+      <View style={styles.topHeader}>
+        <View>
+          <Text style={[styles.headerBizName, { color: colors.text }]}>{businessProfile.name || activeBook?.name || 'Khatabook'}</Text>
+          <Text style={[styles.headerCategory, { color: colors.textSecondary }]}>{businessProfile.category || 'Retail Store'}</Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.moreHeaderBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => router.push('/(tabs)/more')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.moreHeaderBtnText, { color: colors.primary }]}>Book Switch</Text>
+          <ChevronDown size={14} color={colors.primary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Summary Card */}
+      <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.summaryCol}>
+          <View style={styles.summaryHeaderRow}>
+            <ArrowDownLeft size={16} color={colors.primary} />
+            <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>{t('to_collect')}</Text>
+          </View>
+          <Text style={[styles.summaryAmount, { color: colors.primary }]}>
+            ₹{totalReceivable.toFixed(2)}
+          </Text>
+        </View>
+        <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
+        <View style={styles.summaryCol}>
+          <View style={styles.summaryHeaderRow}>
+            <ArrowUpRight size={16} color={colors.danger} />
+            <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>{t('to_pay')}</Text>
+          </View>
+          <Text style={[styles.summaryAmount, { color: colors.danger }]}>
+            ₹{totalPayable.toFixed(2)}
+          </Text>
+        </View>
+      </View>
+
+      {/* Segmented Control (Customers vs Suppliers) */}
+      <View style={[styles.segmentContainer, { backgroundColor: colors.cardSecondary }]}>
+        <TouchableOpacity
+          style={[styles.segmentBtn, selectedPartyType === 1 && [styles.segmentBtnActive, { backgroundColor: colors.card }]]}
+          onPress={() => setSelectedPartyType(1)}
+        >
+          <Text
+            style={[styles.segmentText, { color: colors.textSecondary }, selectedPartyType === 1 && { color: colors.primary, fontWeight: '700' }]}
+          >
+            {t('customers').toUpperCase()}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.segmentBtn, selectedPartyType === 2 && [styles.segmentBtnActive, { backgroundColor: colors.card }]]}
+          onPress={() => setSelectedPartyType(2)}
+        >
+          <Text
+            style={[styles.segmentText, { color: colors.textSecondary }, selectedPartyType === 2 && { color: colors.primary, fontWeight: '700' }]}
+          >
+            {t('suppliers').toUpperCase()}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Search & Filter Bar */}
+      <View style={styles.searchContainer}>
+        <View style={[styles.searchBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Search size={18} color={colors.textSecondary} style={{ marginRight: 8 }} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            placeholder={`Search ${selectedPartyType === 1 ? 'Customer' : 'Supplier'}...`}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholderTextColor={colors.textMuted}
+          />
+        </View>
+        <TouchableOpacity
+          style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: colors.border }, filterPending && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+          onPress={() => setFilterPending(!filterPending)}
+        >
+          <Filter size={16} color={filterPending ? '#ffffff' : colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Customer List */}
+      <FlatList
+        data={filteredCustomers}
+        keyExtractor={(item) => item.id}
+        renderItem={renderPartyItem}
+        contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={() => {
+              if (activeBook) loadCustomers(activeBook.id);
+            }}
+            colors={['#16a34a']}
+          />
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <FileText size={48} color="#cbd5e1" />
+            <Text style={styles.emptyTitle}>
+              No {selectedPartyType === 1 ? 'Customers' : 'Suppliers'} found
+            </Text>
+            <Text style={styles.emptySubtitle}>
+              Add your first {selectedPartyType === 1 ? 'customer' : 'supplier'} to record Gave / Got entries offline.
+            </Text>
+          </View>
+        }
+      />
+
+      {/* Floating Add Button */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push(`/customer/add?type=${selectedPartyType}`)}
+        activeOpacity={0.85}
+      >
+        <UserPlus size={20} color="#ffffff" style={{ marginRight: 8 }} />
+        <Text style={styles.fabText}>
+          {selectedPartyType === 1 ? t('add_customer').toUpperCase() : t('add_supplier').toUpperCase()}
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -16,16 +253,241 @@ export default function TabOneScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  topHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#ffffff',
+  },
+  headerBizName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  headerCategory: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  moreHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  moreHeaderBtnText: {
+    color: '#16a34a',
+    fontSize: 12,
+    fontWeight: '600',
+    marginRight: 4,
+  },
+  summaryCard: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 12,
+    padding: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  summaryCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  summaryHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  summaryLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  summaryAmount: {
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  summaryDivider: {
+    width: 1,
+    backgroundColor: '#e2e8f0',
+    marginHorizontal: 8,
+  },
+  segmentContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#e2e8f0',
+    borderRadius: 8,
+    marginHorizontal: 16,
+    marginTop: 14,
+    padding: 3,
+  },
+  segmentBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  segmentBtnActive: {
+    backgroundColor: '#ffffff',
+    elevation: 1,
+  },
+  segmentText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  segmentTextActive: {
+    color: '#16a34a',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    alignItems: 'center',
+  },
+  searchBox: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 42,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#0f172a',
+  },
+  filterBtn: {
+    width: 42,
+    height: 42,
+    backgroundColor: '#ffffff',
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  filterBtnActive: {
+    backgroundColor: '#16a34a',
+    borderColor: '#16a34a',
+  },
+  listContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 90,
+  },
+  partyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  partyAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#f1f5f9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  partyAvatarText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  partyInfo: {
+    flex: 1,
+  },
+  partyName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0f172a',
+    marginBottom: 2,
+  },
+  partyPhoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  partyPhone: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  partyBalanceContainer: {
+    alignItems: 'flex-end',
+  },
+  partyBalanceAmount: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  partyBalanceLabel: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+    paddingTop: 60,
   },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#334155',
+    marginTop: 12,
   },
-  separator: {
-    marginVertical: 30,
-    height: 1,
-    width: '80%',
+  emptySubtitle: {
+    fontSize: 13,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginTop: 6,
+    paddingHorizontal: 40,
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 20,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#16a34a',
+    paddingHorizontal: 22,
+    paddingVertical: 14,
+    borderRadius: 30,
+    elevation: 4,
+    shadowColor: '#16a34a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+  },
+  fabText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
 });
