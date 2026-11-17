@@ -160,6 +160,66 @@ export default function BackupScreen() {
     );
   };
 
+  const handleRestoreFromClipboard = async () => {
+    try {
+      const clipboardText = await Clipboard.getStringAsync();
+      if (!clipboardText || !clipboardText.trim().startsWith('{')) {
+        Alert.alert(
+          'No Backup in Clipboard',
+          'Could not find a valid Khatabook backup JSON in your clipboard. Please copy your backup JSON first, or tap "SELECT BACKUP FILE & RESTORE".'
+        );
+        return;
+      }
+
+      Alert.alert(
+        'Restore from Clipboard?',
+        `Detected ${(clipboardText.length / 1024).toFixed(1)} KB backup data in clipboard.\n\nRestoring will replace existing local data with the records from this backup. Continue?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Restore Now',
+            onPress: async () => {
+              try {
+                setIsImporting(true);
+                const result = await BackupEngine.restoreFromJsonString(clipboardText);
+
+                if (!result.success) {
+                  Alert.alert('Import Failed', result.message);
+                  return;
+                }
+
+                await loadBooks();
+                if (activeBook) {
+                  await loadCustomers(activeBook.id);
+                  await loadCashbook(activeBook.id);
+                  await loadBills(activeBook.id);
+                }
+                await fetchLiveStats();
+
+                if (result.counts) {
+                  setRestoreStats(result.counts);
+                }
+
+                Alert.alert(
+                  'Restore Complete!',
+                  `Successfully restored from clipboard:\n• ${result.counts?.books || 0} Books\n• ${result.counts?.customers || 0} Customers & Suppliers\n• ${result.counts?.transactions || 0} Transactions\n• ${result.counts?.bills || 0} Bills\n• ${result.counts?.attachments || 0} Receipt Photos`
+                );
+              } catch (e: any) {
+                console.error('Clipboard restore error:', e);
+                Alert.alert('Import Failed', e.message || 'Failed to restore backup from clipboard.');
+              } finally {
+                setIsImporting(false);
+              }
+            },
+          },
+        ]
+      );
+    } catch (e: any) {
+      console.error('Clipboard read error:', e);
+      Alert.alert('Clipboard Error', e?.message || 'Could not read from clipboard.');
+    }
+  };
+
   return (
     <>
       <Stack.Screen
@@ -289,6 +349,21 @@ export default function BackupScreen() {
                 <Text style={styles.importBtnText}>SELECT BACKUP FILE & RESTORE</Text>
               </>
             )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.clipboardRestoreBtn,
+              { borderColor: colors.accentBlue, backgroundColor: colors.primaryBg },
+            ]}
+            onPress={handleRestoreFromClipboard}
+            disabled={isImporting}
+            activeOpacity={0.85}
+          >
+            <Copy size={16} color={colors.accentBlue} style={{ marginRight: 8 }} />
+            <Text style={[styles.clipboardRestoreBtnText, { color: colors.accentBlue }]}>
+              RESTORE FROM CLIPBOARD JSON
+            </Text>
           </TouchableOpacity>
 
           {restoreStats && (
@@ -452,6 +527,20 @@ const styles = StyleSheet.create({
   importBtnText: {
     color: '#ffffff',
     fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  clipboardRestoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    borderRadius: 10,
+    marginTop: 10,
+    borderWidth: 1.5,
+  },
+  clipboardRestoreBtnText: {
+    fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
