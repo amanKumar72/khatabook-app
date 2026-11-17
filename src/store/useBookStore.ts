@@ -30,7 +30,7 @@ export const useBookStore = create<BookState>((set, get) => ({
     try {
       const db = await getDatabase();
       const books = await db.getAllAsync<Book>('SELECT * FROM books ORDER BY created_at ASC');
-      
+
       // Load active book ID from settings
       const setting = await db.getFirstAsync<{ value: string }>(
         'SELECT value FROM settings WHERE key = ?',
@@ -40,23 +40,32 @@ export const useBookStore = create<BookState>((set, get) => ({
       const activeId = setting ? setting.value : books[0]?.id;
       const activeBook = books.find((b) => b.id === activeId) || books[0] || null;
 
-      // Load profile
-      const profileSetting = await db.getFirstAsync<{ value: string }>(
-        'SELECT value FROM settings WHERE key = ?',
-        ['business_profile']
-      );
-      let profile: BusinessProfile = get().businessProfile;
-      if (profileSetting) {
-        try {
-          profile = JSON.parse(profileSetting.value);
-        } catch {}
-      } else if (activeBook) {
-        profile = {
-          ...profile,
-          name: activeBook.name,
-          phone: activeBook.phone || '',
-          category: activeBook.business_category || profile.category,
-        };
+      let profile: BusinessProfile = {
+        name: activeBook?.name || 'My Business',
+        phone: activeBook?.phone || '',
+        address: '',
+        gstin: '',
+        upi_id: '',
+        category: activeBook?.business_category || 'Kirana / General Store',
+      };
+
+      if (activeBook) {
+        // Load book-specific profile if saved
+        const bookProfileSetting = await db.getFirstAsync<{ value: string }>(
+          'SELECT value FROM settings WHERE key = ?',
+          [`business_profile_${activeBook.id}`]
+        );
+        if (bookProfileSetting) {
+          try {
+            const parsed = JSON.parse(bookProfileSetting.value);
+            profile = {
+              ...profile,
+              ...parsed,
+              name: activeBook.name,
+              category: activeBook.business_category || parsed.category || profile.category,
+            };
+          } catch {}
+        }
       }
 
       set({ books, activeBook, businessProfile: profile, isLoading: false });
@@ -72,8 +81,42 @@ export const useBookStore = create<BookState>((set, get) => ({
       'active_book_id',
       bookId,
     ]);
-    const active = get().books.find((b) => b.id === bookId) || null;
-    set({ activeBook: active });
+    const books = get().books;
+    const active = books.find((b) => b.id === bookId) || null;
+
+    if (!active) {
+      set({ activeBook: null });
+      return;
+    }
+
+    // Load book-specific profile
+    const bookProfileSetting = await db.getFirstAsync<{ value: string }>(
+      'SELECT value FROM settings WHERE key = ?',
+      [`business_profile_${active.id}`]
+    );
+
+    let profile: BusinessProfile = {
+      name: active.name,
+      phone: active.phone || '',
+      address: '',
+      gstin: '',
+      upi_id: '',
+      category: active.business_category || 'Kirana / General Store',
+    };
+
+    if (bookProfileSetting) {
+      try {
+        const parsed = JSON.parse(bookProfileSetting.value);
+        profile = {
+          ...profile,
+          ...parsed,
+          name: active.name,
+          category: active.business_category || parsed.category || profile.category,
+        };
+      } catch {}
+    }
+
+    set({ activeBook: active, businessProfile: profile });
   },
 
   createBook: async (name: string, category = 'Kirana / General Store') => {
@@ -85,6 +128,19 @@ export const useBookStore = create<BookState>((set, get) => ({
       [id, name, '', 'INR', category, now, now]
     );
 
+    const initialProfile: BusinessProfile = {
+      name,
+      phone: '',
+      address: '',
+      gstin: '',
+      upi_id: '',
+      category,
+    };
+    await db.runAsync('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [
+      `business_profile_${id}`,
+      JSON.stringify(initialProfile),
+    ]);
+
     await get().loadBooks();
     await get().setActiveBook(id);
     return id;
@@ -92,23 +148,41 @@ export const useBookStore = create<BookState>((set, get) => ({
 
   updateBusinessProfile: async (updates: Partial<BusinessProfile>) => {
     const db = await getDatabase();
+    const active = get().activeBook;
     const updated = { ...get().businessProfile, ...updates };
-    await db.runAsync('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [
-      'business_profile',
-      JSON.stringify(updated),
-    ]);
 
-    // Also update current active book name if updated
-    if (updates.name && get().activeBook) {
-      await db.runAsync('UPDATE books SET name = ?, updated_at = ? WHERE id = ?', [
-        updates.name,
-        Date.now(),
-        get().activeBook!.id,
+    if (active) {
+      const newName = updates.name !== undefined ? updates.name.trim() : active.name;
+      const newCategory = updates.category !== undefined ? updates.category.trim() : (active.business_category || 'Kirana / General Store');
+      const newPhone = updates.phone !== undefined ? updates.phone.trim() : (active.phone || '');
+
+      updated.name = newName;
+      updated.category = newCategory;
+
+      await db.runAsync(
+        'UPDATE books SET name = ?, business_category = ?, phone = ?, updated_at = ? WHERE id = ?',
+        [newName, newCategory, newPhone, Date.now(), active.id]
+      );
+
+      await db.runAsync('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [
+        `business_profile_${active.id}`,
+        JSON.stringify(updated),
       ]);
-    }
 
-    set({ businessProfile: updated });
-    await get().loadBooks();
+      const updatedBooks = get().books.map((b) =>
+        b.id === active.id
+          ? { ...b, name: newName, business_category: newCategory, phone: newPhone }
+          : b
+      );
+      const updatedActive = updatedBooks.find((b) => b.id === active.id) || null;
+
+      set({ books: updatedBooks, activeBook: updatedActive, businessProfile: updated });
+    } else {
+      await db.runAsync('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [
+        'business_profile',
+        JSON.stringify(updated),
+      ]);
+      set({ businessProfile: updated });
+    }
   },
 }));
-

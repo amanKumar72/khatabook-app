@@ -33,6 +33,7 @@ import { useThemeStore } from '../../src/store/useThemeStore';
 import { Transaction, TransactionType } from '../../src/types/models';
 import { PdfGenerator } from '../../src/services/pdfGenerator';
 import { getWhatsAppReminderMessage, generateUpiUrl } from '../../src/services/upi';
+import DatePickerModal from '../../components/DatePickerModal';
 
 export default function CustomerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -68,6 +69,8 @@ export default function CustomerDetailScreen() {
   const [txDate, setTxDate] = useState('');
   const [txDescription, setTxDescription] = useState('');
   const [txDueDate, setTxDueDate] = useState('');
+  const [showEditDatePicker, setShowEditDatePicker] = useState(false);
+  const [showEditDueDatePicker, setShowEditDueDatePicker] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -568,31 +571,24 @@ export default function CustomerDetailScreen() {
                 placeholderTextColor={colors.textMuted}
               />
 
-              {/* Date */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>Date (YYYY-MM-DD) *</Text>
-                <TouchableOpacity
-                  onPress={() => setTxDate(new Date().toISOString().split('T')[0])}
-                >
-                  <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '700', marginBottom: 4 }}>
-                    Today
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              <TextInput
+              {/* Date Selector */}
+              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>Transaction Date *</Text>
+              <TouchableOpacity
                 style={[
-                  styles.modalInput,
-                  {
-                    backgroundColor: colors.inputBg,
-                    borderColor: colors.inputBorder,
-                    color: colors.text,
-                  },
+                  styles.modalDateBtn,
+                  { backgroundColor: colors.inputBg, borderColor: colors.inputBorder },
                 ]}
-                value={txDate}
-                onChangeText={setTxDate}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textMuted}
-              />
+                onPress={() => setShowEditDatePicker(true)}
+                activeOpacity={0.7}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Calendar size={16} color={colors.primary} style={{ marginRight: 8 }} />
+                  <Text style={[styles.modalDateBtnText, { color: colors.text }]}>
+                    {txDate || 'Select Date'}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '700' }}>Change</Text>
+              </TouchableOpacity>
 
               {/* Description */}
               <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>Note / Details (Optional)</Text>
@@ -611,22 +607,43 @@ export default function CustomerDetailScreen() {
                 placeholderTextColor={colors.textMuted}
               />
 
-              {/* Due Date */}
-              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>Due Date (Optional, YYYY-MM-DD)</Text>
-              <TextInput
-                style={[
-                  styles.modalInput,
-                  {
-                    backgroundColor: colors.inputBg,
-                    borderColor: colors.inputBorder,
-                    color: colors.text,
-                  },
-                ]}
-                value={txDueDate}
-                onChangeText={setTxDueDate}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textMuted}
-              />
+              {/* Due Date Selector */}
+              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>Payment Due Date (Optional)</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <TouchableOpacity
+                  style={[
+                    styles.modalDateBtn,
+                    { flex: 1, marginBottom: 0, backgroundColor: colors.inputBg, borderColor: colors.inputBorder },
+                  ]}
+                  onPress={() => setShowEditDueDatePicker(true)}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Clock size={16} color={txDueDate ? '#d97706' : colors.textMuted} style={{ marginRight: 8 }} />
+                    <Text
+                      style={[
+                        styles.modalDateBtnText,
+                        { color: txDueDate ? colors.text : colors.textMuted },
+                      ]}
+                    >
+                      {txDueDate || 'No due date set'}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '700' }}>
+                    {txDueDate ? 'Change' : 'Set'}
+                  </Text>
+                </TouchableOpacity>
+
+                {txDueDate ? (
+                  <TouchableOpacity
+                    style={[styles.modalClearBtn, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}
+                    onPress={() => setTxDueDate('')}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <X size={16} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
 
               <TouchableOpacity
                 style={[styles.modalSaveBtn, { backgroundColor: colors.primary }]}
@@ -741,6 +758,25 @@ export default function CustomerDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Date Dialogs for Edit Transaction */}
+      <DatePickerModal
+        visible={showEditDatePicker}
+        initialDate={txDate}
+        title="Select Transaction Date"
+        allowFuture={false}
+        onSelect={(date) => setTxDate(date)}
+        onClose={() => setShowEditDatePicker(false)}
+      />
+
+      <DatePickerModal
+        visible={showEditDueDatePicker}
+        initialDate={txDueDate || txDate}
+        title="Select Due Date"
+        allowFuture={true}
+        onSelect={(date) => setTxDueDate(date)}
+        onClose={() => setShowEditDueDatePicker(false)}
+      />
     </>
   );
 }
@@ -1008,5 +1044,26 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '700',
+  },
+  modalDateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    marginBottom: 12,
+    justifyContent: 'space-between',
+  },
+  modalDateBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalClearBtn: {
+    padding: 11,
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

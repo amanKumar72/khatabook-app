@@ -12,12 +12,13 @@ import {
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
-import { Camera, Calendar, FileText, Check, X } from 'lucide-react-native';
+import { Camera, Calendar, FileText, Check, X, Clock } from 'lucide-react-native';
 import { useBookStore } from '../../src/store/useBookStore';
 import { useKhataStore } from '../../src/store/useKhataStore';
 import { useLanguageStore } from '../../src/store/useLanguageStore';
 import { useThemeStore } from '../../src/store/useThemeStore';
 import { TransactionType } from '../../src/types/models';
+import DatePickerModal from '../../components/DatePickerModal';
 
 export default function AddTransactionScreen() {
   const router = useRouter();
@@ -33,10 +34,13 @@ export default function AddTransactionScreen() {
 
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
+  const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
   const [dueDate, setDueDate] = useState('');
   const [attachmentUri, setAttachmentUri] = useState<string | null>(null);
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  // Date picker dialog states
+  const [showEntryDatePicker, setShowEntryDatePicker] = useState(false);
+  const [showDueDatePicker, setShowDueDatePicker] = useState(false);
 
   const handlePickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -80,7 +84,7 @@ export default function AddTransactionScreen() {
       customerId,
       numAmount,
       txType,
-      todayStr,
+      entryDate,
       description.trim(),
       attachmentUri || '',
       dueDate.trim() || ''
@@ -98,6 +102,7 @@ export default function AddTransactionScreen() {
           headerBackButtonDisplayMode: 'minimal',
           headerStyle: { backgroundColor: colors.card },
           headerTintColor: colors.text,
+          headerTitleStyle: { color: colors.text, fontWeight: '700' },
         }}
       />
       <ScrollView
@@ -122,6 +127,7 @@ export default function AddTransactionScreen() {
           </Text>
         </View>
 
+        {/* Amount Input */}
         <Text style={[styles.label, { color: colors.textSecondary }]}>Amount (₹) *</Text>
         <TextInput
           style={[
@@ -140,6 +146,26 @@ export default function AddTransactionScreen() {
           autoFocus
         />
 
+        {/* Entry Date Selector */}
+        <Text style={[styles.label, { color: colors.textSecondary }]}>Entry Date *</Text>
+        <TouchableOpacity
+          style={[
+            styles.datePickerBtn,
+            { backgroundColor: colors.inputBg, borderColor: colors.inputBorder },
+          ]}
+          onPress={() => setShowEntryDatePicker(true)}
+          activeOpacity={0.7}
+        >
+          <Calendar size={18} color={colors.primary} style={{ marginRight: 10 }} />
+          <Text style={[styles.datePickerBtnText, { color: colors.text }]}>
+            {entryDate}
+          </Text>
+          <Text style={[styles.datePickerTag, { color: colors.primary, backgroundColor: colors.primaryBg }]}>
+            Change Date
+          </Text>
+        </TouchableOpacity>
+
+        {/* Description / Note */}
         <Text style={[styles.label, { color: colors.textSecondary }]}>Note / Item Details (Optional)</Text>
         <View
           style={[
@@ -160,24 +186,37 @@ export default function AddTransactionScreen() {
           />
         </View>
 
-        <Text style={[styles.label, { color: colors.textSecondary }]}>Payment Due Date (Optional, YYYY-MM-DD)</Text>
-        <View
-          style={[
-            styles.inputBox,
-            {
-              backgroundColor: colors.inputBg,
-              borderColor: colors.inputBorder,
-            },
-          ]}
-        >
-          <Calendar size={18} color={colors.textMuted} style={{ marginRight: 10 }} />
-          <TextInput
-            style={[styles.input, { color: colors.text }]}
-            placeholder="e.g. 2026-12-01"
-            placeholderTextColor={colors.textMuted}
-            value={dueDate}
-            onChangeText={setDueDate}
-          />
+        {/* Payment Due Date Selector */}
+        <Text style={[styles.label, { color: colors.textSecondary }]}>Payment Due Date (Optional)</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity
+            style={[
+              styles.datePickerBtn,
+              { flex: 1, backgroundColor: colors.inputBg, borderColor: colors.inputBorder },
+            ]}
+            onPress={() => setShowDueDatePicker(true)}
+            activeOpacity={0.7}
+          >
+            <Clock size={18} color={dueDate ? '#d97706' : colors.textMuted} style={{ marginRight: 10 }} />
+            <Text
+              style={[
+                styles.datePickerBtnText,
+                { color: dueDate ? colors.text : colors.textMuted },
+              ]}
+            >
+              {dueDate || 'Tap to select due date'}
+            </Text>
+          </TouchableOpacity>
+
+          {dueDate ? (
+            <TouchableOpacity
+              style={[styles.clearBtn, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}
+              onPress={() => setDueDate('')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <X size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {/* Attach Receipt */}
@@ -198,33 +237,47 @@ export default function AddTransactionScreen() {
               styles.attachBtn,
               {
                 backgroundColor: colors.cardSecondary,
-                borderColor: colors.inputBorder,
+                borderColor: colors.border,
               },
             ]}
             onPress={handlePickImage}
             activeOpacity={0.7}
           >
             <Camera size={20} color={colors.textSecondary} style={{ marginRight: 8 }} />
-            <Text style={[styles.attachBtnText, { color: colors.textSecondary }]}>
-              Take Photo / Upload Bill Receipt
-            </Text>
+            <Text style={[styles.attachBtnText, { color: colors.textSecondary }]}>Add Receipt Photo</Text>
           </TouchableOpacity>
         )}
 
         {/* Save Button */}
         <TouchableOpacity
-          style={[
-            styles.saveBtn,
-            { backgroundColor: isGave ? colors.danger : colors.primary },
-          ]}
+          style={[styles.saveBtn, { backgroundColor: isGave ? '#dc2626' : '#16a34a' }]}
           onPress={handleSave}
           activeOpacity={0.85}
         >
           <Text style={styles.saveBtnText}>
-            {t('save')} (₹{amount || '0.00'})
+            {t('save')} {isGave ? 'GAVE ENTRY' : 'GOT ENTRY'}
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Date Dialogs */}
+      <DatePickerModal
+        visible={showEntryDatePicker}
+        initialDate={entryDate}
+        title="Select Transaction Date"
+        allowFuture={false}
+        onSelect={(date) => setEntryDate(date)}
+        onClose={() => setShowEntryDatePicker(false)}
+      />
+
+      <DatePickerModal
+        visible={showDueDatePicker}
+        initialDate={dueDate || entryDate}
+        title="Select Payment Due Date"
+        allowFuture={true}
+        onSelect={(date) => setDueDate(date)}
+        onClose={() => setShowDueDatePicker(false)}
+      />
     </>
   );
 }
@@ -232,10 +285,10 @@ export default function AddTransactionScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
   },
   content: {
     padding: 20,
+    paddingBottom: 40,
   },
   typeHeader: {
     paddingVertical: 14,
@@ -251,52 +304,71 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#475569',
     marginBottom: 6,
     marginTop: 12,
   },
   amountInput: {
     borderWidth: 1.5,
-    borderColor: '#cbd5e1',
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 28,
     fontWeight: '800',
-    color: '#0f172a',
-    backgroundColor: '#f8fafc',
     marginBottom: 4,
+  },
+  datePickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 48,
+    justifyContent: 'space-between',
+  },
+  datePickerBtnText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  datePickerTag: {
+    fontSize: 12,
+    fontWeight: '700',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  clearBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   inputBox: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#cbd5e1',
     borderRadius: 10,
     paddingHorizontal: 12,
     height: 48,
-    backgroundColor: '#f8fafc',
   },
   input: {
     flex: 1,
     fontSize: 14,
-    color: '#0f172a',
   },
   attachBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#cbd5e1',
     borderStyle: 'dashed',
     borderRadius: 10,
     paddingVertical: 14,
-    backgroundColor: '#f8fafc',
   },
   attachBtnText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#64748b',
   },
   previewContainer: {
     position: 'relative',
@@ -324,7 +396,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
-    marginTop: 36,
+    marginTop: 32,
     elevation: 2,
   },
   saveBtnText: {

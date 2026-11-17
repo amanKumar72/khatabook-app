@@ -122,10 +122,10 @@ export default function MoreScreen() {
           <Store size={28} color={colors.primary} />
         </View>
         <View style={{ flex: 1, marginLeft: 14 }}>
-          <Text style={[styles.profileName, { color: colors.text }]}>{businessProfile.name || 'My Business'}</Text>
+          <Text style={[styles.profileName, { color: colors.text }]}>{activeBook?.name || businessProfile.name || 'My Business'}</Text>
           <Text style={[styles.profileSub, { color: colors.textSecondary }]}>
             {businessProfile.phone ? `${businessProfile.phone} • ` : ''}
-            {businessProfile.category || 'Retail Store'}
+            {activeBook?.business_category || businessProfile.category || 'Retail Store'}
           </Text>
           {businessProfile.gstin ? (
             <Text style={[styles.gstText, { color: colors.primary }]}>GSTIN: {businessProfile.gstin}</Text>
@@ -134,7 +134,7 @@ export default function MoreScreen() {
         <TouchableOpacity
           style={[styles.editProfileBtn, { backgroundColor: colors.cardSecondary }]}
           onPress={() => {
-            setEditName(businessProfile.name);
+            setEditName(activeBook?.name || businessProfile.name);
             setEditPhone(businessProfile.phone || '');
             setEditAddress(businessProfile.address || '');
             setEditGstin(businessProfile.gstin || '');

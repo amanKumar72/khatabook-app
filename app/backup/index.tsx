@@ -18,7 +18,9 @@ import {
   Database,
   AlertTriangle,
   FolderSync,
+  Copy,
 } from 'lucide-react-native';
+import * as Clipboard from 'expo-clipboard';
 import { BackupEngine, RestoreResult } from '../../src/services/backupEngine';
 import { useBookStore } from '../../src/store/useBookStore';
 import { useKhataStore } from '../../src/store/useKhataStore';
@@ -38,6 +40,7 @@ export default function BackupScreen() {
 
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isCopying, setIsCopying] = useState(false);
   const [lastExportPath, setLastExportPath] = useState<string | null>(null);
   const [restoreStats, setRestoreStats] = useState<RestoreResult['counts'] | null>(null);
 
@@ -90,6 +93,23 @@ export default function BackupScreen() {
     } finally {
       setIsExporting(false);
       fetchLiveStats();
+    }
+  };
+
+  const handleCopyJson = async () => {
+    try {
+      setIsCopying(true);
+      const jsonStr = await BackupEngine.getCompleteBackupJson();
+      await Clipboard.setStringAsync(jsonStr);
+      Alert.alert(
+        'Copied to Clipboard!',
+        `Complete user backup JSON (${(jsonStr.length / 1024).toFixed(1)} KB) has been copied to your clipboard. You can paste it into any text editor, email, or chat.`
+      );
+    } catch (e: any) {
+      console.error('Copy JSON error:', e);
+      Alert.alert('Copy Failed', e?.message || 'Failed to copy JSON to clipboard.');
+    } finally {
+      setIsCopying(false);
     }
   };
 
@@ -210,7 +230,38 @@ export default function BackupScreen() {
           )}
         </View>
 
-        {/* Action 2: Import & Restore Previous Backup */}
+        {/* Action 2: Copy Complete JSON to Clipboard */}
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.cardHeader}>
+            <View style={[styles.iconBox, { backgroundColor: '#fef3c7' }]}>
+              <Copy size={22} color="#d97706" />
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>Copy JSON to Clipboard</Text>
+              <Text style={[styles.cardSub, { color: colors.textSecondary }]}>
+                Instantly copy the complete database and media records as raw formatted JSON to your clipboard.
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.copyBtn, { backgroundColor: '#d97706' }]}
+            onPress={handleCopyJson}
+            disabled={isCopying}
+            activeOpacity={0.85}
+          >
+            {isCopying ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <>
+                <Copy size={18} color="#ffffff" style={{ marginRight: 8 }} />
+                <Text style={styles.copyBtnText}>COPY COMPLETE BACKUP JSON</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Action 3: Import & Restore Previous Backup */}
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.cardHeader}>
             <View style={[styles.iconBox, { backgroundColor: colors.accentBlueBg }]}>
@@ -370,6 +421,20 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   exportBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  copyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 10,
+    elevation: 2,
+  },
+  copyBtnText: {
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '800',

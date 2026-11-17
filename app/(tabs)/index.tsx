@@ -137,10 +137,10 @@ export default function KhataHomeScreen() {
       >
         <View>
           <Text style={[styles.headerBizName, { color: colors.text }]}>
-            {businessProfile.name || activeBook?.name || 'Khatabook'}
+            {activeBook?.name || businessProfile.name || 'Khatabook'}
           </Text>
           <Text style={[styles.headerCategory, { color: colors.textSecondary }]}>
-            {businessProfile.category || 'Retail Store'}
+            {activeBook?.business_category || businessProfile.category || 'Retail Store'}
           </Text>
         </View>
         <TouchableOpacity

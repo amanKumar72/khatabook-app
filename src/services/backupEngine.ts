@@ -90,6 +90,57 @@ export class BackupEngine {
   }
 
   /**
+   * Generate complete backup archive as JSON string for clipboard copying or inspection
+   */
+  static async getCompleteBackupJson(): Promise<string> {
+    const db = await getDatabase();
+
+    const tables = {
+      books: await db.getAllAsync<Book>('SELECT * FROM books'),
+      customers: await db.getAllAsync<Customer>('SELECT * FROM customers'),
+      transactions: await db.getAllAsync<Transaction>('SELECT * FROM transactions'),
+      bills: await db.getAllAsync<Bill>('SELECT * FROM bills'),
+      bill_items: await db.getAllAsync<BillItem>('SELECT * FROM bill_items'),
+      inventory_items: await db.getAllAsync<InventoryItem>('SELECT * FROM inventory_items'),
+      cashbook: await db.getAllAsync<CashbookEntry>('SELECT * FROM cashbook'),
+      staff: await db.getAllAsync<Staff>('SELECT * FROM staff'),
+      staff_attendance: await db.getAllAsync<StaffAttendance>('SELECT * FROM staff_attendance'),
+    };
+
+    const attachments: { filename: string; base64: string }[] = [];
+    const attachmentsDir = `${FileSystem.documentDirectory}attachments/`;
+    const dirInfo = await FileSystem.getInfoAsync(attachmentsDir);
+
+    if (dirInfo.exists) {
+      const files = await FileSystem.readDirectoryAsync(attachmentsDir);
+      for (const file of files) {
+        try {
+          const fileContent = await FileSystem.readAsStringAsync(`${attachmentsDir}${file}`, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          attachments.push({ filename: file, base64: fileContent });
+        } catch (e) {
+          console.warn(`Failed to read attachment ${file}:`, e);
+        }
+      }
+    }
+
+    const rawDataString = JSON.stringify(tables);
+    const checksum = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, rawDataString);
+
+    const archive: BackupArchive = {
+      app: 'KhatabookOffline',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      checksum,
+      tables,
+      attachments,
+    };
+
+    return JSON.stringify(archive, null, 2);
+  }
+
+  /**
    * Import a backup file and restore complete data atomically
    */
   static async importCompleteData(): Promise<RestoreResult> {
