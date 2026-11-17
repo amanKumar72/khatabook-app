@@ -23,7 +23,6 @@ import {
   Check,
   ShieldCheck,
   X,
-  Languages,
   Moon,
   Sun,
 } from 'lucide-react-native';
@@ -32,7 +31,6 @@ import { useAuthStore } from '../../src/store/useAuthStore';
 import { useLanguageStore } from '../../src/store/useLanguageStore';
 import { useThemeStore } from '../../src/store/useThemeStore';
 import { ThemeMode } from '../../src/constants/theme';
-import { SUPPORTED_LANGUAGES, SupportedLanguage } from '../../src/i18n/languages';
 import { BUSINESS_CATEGORIES } from '../../src/constants/categories';
 
 export default function MoreScreen() {
@@ -40,13 +38,12 @@ export default function MoreScreen() {
   const { books, activeBook, businessProfile, setActiveBook, createBook, updateBusinessProfile } =
     useBookStore();
   const { isLockEnabled, setLockEnabled } = useAuthStore();
-  const { language, setLanguage, t } = useLanguageStore();
+  const { t } = useLanguageStore();
   const { themeMode, isDark, colors, setThemeMode } = useThemeStore();
 
   const [bookModalVisible, setBookModalVisible] = useState(false);
   const [newBookName, setNewBookName] = useState('');
   const [profileModalVisible, setProfileModalVisible] = useState(false);
-  const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [themeModalVisible, setThemeModalVisible] = useState(false);
 
   // Profile edit state
@@ -122,11 +119,23 @@ export default function MoreScreen() {
               key={b.id}
               style={[
                 styles.bookRow,
-                isActive && { backgroundColor: colors.primaryBg },
+                {
+                  backgroundColor: isActive ? colors.primaryBg : colors.cardSecondary,
+                  borderColor: isActive ? colors.primary : colors.border,
+                  borderWidth: 1,
+                },
               ]}
               onPress={() => setActiveBook(b.id)}
             >
-              <View style={{ flex: 1 }}>
+              <View
+                style={[
+                  styles.bookRowIcon,
+                  { backgroundColor: isActive ? colors.primary : colors.border },
+                ]}
+              >
+                <Store size={16} color="#ffffff" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={[styles.bookRowName, { color: isActive ? colors.primary : colors.text }]}>
                   {b.name}
                 </Text>
@@ -197,33 +206,6 @@ export default function MoreScreen() {
             <Text style={[styles.menuSub, { color: colors.textSecondary }]}>QR code visiting card for customer WhatsApp sharing</Text>
           </View>
           <ChevronRight size={18} color={colors.textMuted} />
-        </TouchableOpacity>
-
-        {/* App Language Selection */}
-        <TouchableOpacity
-          style={[styles.menuItem, { borderBottomColor: colors.border }]}
-          onPress={() => setLanguageModalVisible(true)}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.menuIconBox, { backgroundColor: '#e0f2fe' }]}>
-            <Languages size={20} color="#0284c7" />
-          </View>
-          <View style={styles.menuInfo}>
-            <Text style={[styles.menuTitle, { color: colors.text }]}>{t('app_language')}</Text>
-            <Text style={[styles.menuSub, { color: colors.textSecondary }]}>
-              {language === 'hi'
-                ? 'हिंदी (Hindi) • आवाज व संदेश'
-                : language === 'hi_en'
-                ? 'Hinglish • Voice & WhatsApp'
-                : 'English • Voice & WhatsApp'}
-            </Text>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: '#0284c7', marginRight: 4 }}>
-              {language === 'hi' ? 'हिंदी' : language === 'hi_en' ? 'Hinglish' : 'English'}
-            </Text>
-            <ChevronRight size={18} color={colors.textMuted} />
-          </View>
         </TouchableOpacity>
 
         {/* Visual Theme Selection */}
@@ -406,62 +388,12 @@ export default function MoreScreen() {
         </View>
       </Modal>
 
-      {/* Language Selection Modal */}
-      <Modal visible={languageModalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, { backgroundColor: colors.card }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Choose Language / भाषा चुनें</Text>
-              <TouchableOpacity onPress={() => setLanguageModalVisible(false)}>
-                <X size={20} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-            <Text style={[styles.modalSub, { color: colors.textSecondary }]}>{t('app_language_sub')}</Text>
-
-            {SUPPORTED_LANGUAGES.map((item) => (
-              <TouchableOpacity
-                key={item.code}
-                style={[
-                  styles.languageOptionRow,
-                  { borderColor: colors.border, backgroundColor: colors.cardSecondary },
-                  language === item.code && [
-                    styles.languageOptionRowActive,
-                    { borderColor: colors.primary, backgroundColor: colors.primaryBg },
-                  ],
-                ]}
-                onPress={async () => {
-                  await setLanguage(item.code);
-                  setLanguageModalVisible(false);
-                }}
-                activeOpacity={0.7}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text
-                    style={[
-                      styles.languageOptionName,
-                      { color: colors.text },
-                      language === item.code && [styles.languageOptionTextActive, { color: colors.primary }],
-                    ]}
-                  >
-                    {item.name}
-                  </Text>
-                  <Text style={[styles.languageOptionNative, { color: colors.textSecondary }]}>
-                    {item.nativeName}
-                  </Text>
-                </View>
-                {language === item.code && <Check size={20} color={colors.primary} />}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      </Modal>
-
       {/* Theme Selection Modal */}
       <Modal visible={themeModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, { backgroundColor: colors.card }]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Choose Theme / थीम चुनें</Text>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Choose Theme</Text>
               <TouchableOpacity onPress={() => setThemeModalVisible(false)}>
                 <X size={20} color={colors.textSecondary} />
               </TouchableOpacity>
@@ -588,7 +520,14 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 10,
     borderRadius: 8,
-    marginBottom: 4,
+    marginBottom: 6,
+  },
+  bookRowIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   bookRowActive: {
     backgroundColor: '#f0fdf4',

@@ -125,14 +125,30 @@ export default function KhataHomeScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
       {/* Top Header */}
-      <View style={styles.topHeader}>
+      <View
+        style={[
+          styles.topHeader,
+          {
+            backgroundColor: colors.card,
+            borderBottomColor: colors.border,
+            borderBottomWidth: 1,
+          },
+        ]}
+      >
         <View>
-          <Text style={[styles.headerBizName, { color: colors.text }]}>{businessProfile.name || activeBook?.name || 'Khatabook'}</Text>
-          <Text style={[styles.headerCategory, { color: colors.textSecondary }]}>{businessProfile.category || 'Retail Store'}</Text>
+          <Text style={[styles.headerBizName, { color: colors.text }]}>
+            {businessProfile.name || activeBook?.name || 'Khatabook'}
+          </Text>
+          <Text style={[styles.headerCategory, { color: colors.textSecondary }]}>
+            {businessProfile.category || 'Retail Store'}
+          </Text>
         </View>
         <TouchableOpacity
-          style={[styles.moreHeaderBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={() => router.push('/(tabs)/more')}
+          style={[
+            styles.moreHeaderBtn,
+            { backgroundColor: colors.cardSecondary, borderColor: colors.border },
+          ]}
+          onPress={() => setBookModalVisible(true)}
           activeOpacity={0.8}
         >
           <Text style={[styles.moreHeaderBtnText, { color: colors.primary }]}>Book Switch</Text>
@@ -246,6 +262,144 @@ export default function KhataHomeScreen() {
           {selectedPartyType === 1 ? t('add_customer').toUpperCase() : t('add_supplier').toUpperCase()}
         </Text>
       </TouchableOpacity>
+
+      {/* Switch Book Modal */}
+      <Modal visible={bookModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <BookOpen size={20} color={colors.primary} style={{ marginRight: 8 }} />
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Switch Business Book</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setBookModalVisible(false);
+                  setIsCreatingBook(false);
+                }}
+              >
+                <X size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.modalSub, { color: colors.textSecondary }]}>
+              Select an active ledger or create another book for branches or personal accounts.
+            </Text>
+
+            {books.map((b) => {
+              const isActive = b.id === activeBook?.id;
+              return (
+                <TouchableOpacity
+                  key={b.id}
+                  style={[
+                    styles.bookItemRow,
+                    {
+                      backgroundColor: isActive ? colors.primaryBg : colors.cardSecondary,
+                      borderColor: isActive ? colors.primary : colors.border,
+                    },
+                  ]}
+                  onPress={async () => {
+                    await setActiveBook(b.id);
+                    setBookModalVisible(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View
+                    style={[
+                      styles.bookIconCircle,
+                      { backgroundColor: isActive ? colors.primary : colors.border },
+                    ]}
+                  >
+                    <Store size={16} color="#ffffff" />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text
+                      style={[
+                        styles.bookItemName,
+                        { color: isActive ? colors.primary : colors.text },
+                      ]}
+                    >
+                      {b.name}
+                    </Text>
+                    <Text style={[styles.bookItemSub, { color: colors.textSecondary }]}>
+                      {b.business_category || 'Retail Store'}
+                    </Text>
+                  </View>
+                  {isActive && <Check size={20} color={colors.primary} />}
+                </TouchableOpacity>
+              );
+            })}
+
+            {isCreatingBook ? (
+              <View
+                style={[
+                  styles.createBookBox,
+                  { backgroundColor: colors.cardSecondary, borderColor: colors.border },
+                ]}
+              >
+                <TextInput
+                  style={[
+                    styles.createBookInput,
+                    {
+                      backgroundColor: colors.inputBg,
+                      borderColor: colors.inputBorder,
+                      color: colors.text,
+                    },
+                  ]}
+                  placeholder="Enter new book name (e.g. Branch 2)"
+                  placeholderTextColor={colors.textMuted}
+                  value={newBookName}
+                  onChangeText={setNewBookName}
+                  autoFocus
+                />
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                  <TouchableOpacity
+                    style={[
+                      styles.cancelCreateBtn,
+                      { backgroundColor: colors.card, borderColor: colors.border },
+                    ]}
+                    onPress={() => {
+                      setIsCreatingBook(false);
+                      setNewBookName('');
+                    }}
+                  >
+                    <Text style={[styles.cancelCreateBtnText, { color: colors.textSecondary }]}>
+                      Cancel
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.confirmCreateBtn, { backgroundColor: colors.primary }]}
+                    onPress={async () => {
+                      if (newBookName.trim()) {
+                        await createBook(newBookName.trim());
+                        setNewBookName('');
+                        setIsCreatingBook(false);
+                        setBookModalVisible(false);
+                      }
+                    }}
+                  >
+                    <Text style={styles.confirmCreateBtnText}>Add Book</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[
+                  styles.addBookRowBtn,
+                  { borderColor: colors.primary, backgroundColor: colors.primaryBg },
+                ]}
+                onPress={() => setIsCreatingBook(true)}
+                activeOpacity={0.7}
+              >
+                <Plus size={16} color={colors.primary} style={{ marginRight: 6 }} />
+                <Text style={[styles.addBookRowBtnText, { color: colors.primary }]}>
+                  Create Another Book
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -261,7 +415,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#ffffff',
   },
   headerBizName: {
     fontSize: 20,
@@ -489,5 +642,108 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     letterSpacing: 0.5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    paddingBottom: 36,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  modalSub: {
+    fontSize: 12,
+    color: '#64748b',
+    marginBottom: 16,
+  },
+  bookItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginBottom: 8,
+  },
+  bookIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bookItemName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  bookItemSub: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  addBookRowBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    marginTop: 8,
+  },
+  addBookRowBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  createBookBox: {
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  createBookInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+  },
+  cancelCreateBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  cancelCreateBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  confirmCreateBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  confirmCreateBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
